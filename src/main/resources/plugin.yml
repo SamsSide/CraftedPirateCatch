@@ -1,0 +1,53 @@
+name: CraftedPirateCatch
+version: ${project.version}
+main: net.samsside.craftedpiratecatch.CraftedPirateCatch
+author: SamsSide
+api-version: '26.2'
+folia-supported: false
+description: Pirate's Catch - a daily rotating fishing race at the spawn dock.
+depend: [WorldGuard, PlaceholderAPI]
+libraries:
+  - org.xerial:sqlite-jdbc:3.53.2.1
+commands:
+  piratecatch:
+    description: Pirate's Catch fishing event.
+    aliases: [pirate]
+permissions:
+  craftedpiratecatch.use:
+    description: Use /pirate and /pirate top.
+    default: true
+  craftedpiratecatch.reload:
+    description: Reload config, messages and the database.
+    default: op
+  craftedpiratecatch.admin.start:
+    description: Start today's event now.
+    default: op
+  craftedpiratecatch.admin.stop:
+    description: Stop the running event and award rewards.
+    default: op
+  craftedpiratecatch.admin.cancel:
+    description: Cancel the running event without rewards.
+    default: op
+  craftedpiratecatch.admin.skip:
+    description: Skip or unskip today's event.
+    default: op
+  craftedpiratecatch.admin.test:
+    description: Run a TEST event (no rewards, no records).
+    default: op
+  craftedpiratecatch.admin.status:
+    description: View event status and the upcoming schedule.
+    default: op
+  craftedpiratecatch.admin.resetcooldown:
+    description: Reset a player's key cooldown.
+    default: op
+  craftedpiratecatch.admin.*:
+    description: All Pirate's Catch admin commands.
+    default: op
+    children:
+      craftedpiratecatch.admin.start: true
+      craftedpiratecatch.admin.stop: true
+      craftedpiratecatch.admin.cancel: true
+      craftedpiratecatch.admin.skip: true
+      craftedpiratecatch.admin.test: true
+      craftedpiratecatch.admin.status: true
+      craftedpiratecatch.admin.resetcooldown: true

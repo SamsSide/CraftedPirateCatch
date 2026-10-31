@@ -1,0 +1,114 @@
+# CraftedPirateCatch - Pirate's Catch daily fishing race
+config-version: 1
+
+schedule:
+  # All times/dates are interpreted in this zone.
+  timezone: "Europe/London"
+  # Rotation day N uses slots[(N - first-day) mod size]. HH:mm, 24h.
+  slots: ["13:00", "17:00", "21:00", "01:00"]
+  # A slot earlier than this time is the LATE-NIGHT session of its rotation day,
+  # i.e. it runs at that time on the NEXT calendar date (01:00 belongs to the day before).
+  day-rollover: "06:00"
+  # First and last rotation days (inclusive), yyyy-MM-dd. Outside this window nothing is scheduled.
+  first-day: "2026-11-02"
+  last-day: "2026-11-30"
+  duration-minutes: 60
+  # Minutes before start at which a warning broadcast is sent.
+  warnings-minutes: [15, 5, 1]
+
+region:
+  world: "spawn"
+  # WorldGuard region id. Only fish caught by a player standing inside it count.
+  id: "pirate_dock"
+
+anti-afk:
+  enabled: true
+  # A catch only scores if the player changed their view direction or position within this many seconds.
+  max-idle-seconds: 120
+
+# Which gamemodes may score. Vanished players (metadata "vanished" = true) never score.
+allowed-gamemodes: [SURVIVAL, ADVENTURE]
+
+# Rolled once per qualifying catch, in order; first match wins. Chances are percentages and must sum to <= 100.
+# Remaining chance = no pirate catch (normal fish only).
+loot:
+  - id: common
+    name: "<gray>ᴅᴏᴜʙʟᴏᴏɴ"
+    chance: 25.0
+    points: 1
+    trophy-command: ""
+    broadcast: false
+  - id: uncommon
+    name: "<green>ᴍᴇѕѕᴀɢᴇ ɪɴ ᴀ ʙᴏᴛᴛʟᴇ"
+    chance: 12.0
+    points: 3
+    trophy-command: ""
+    broadcast: false
+  - id: rare
+    name: "<aqua>ᴄᴀᴘᴛᴀɪɴ'ѕ ᴄᴏᴍᴘᴀѕѕ"
+    chance: 6.0
+    points: 8
+    trophy-command: "iagive %player% bee_pirate:pirate_parrot 1 silent"
+    broadcast: false
+  - id: epic
+    name: "<light_purple>ᴋʀᴀᴋᴇɴ ᴛᴇɴᴛᴀᴄʟᴇ"
+    chance: 1.7
+    points: 20
+    trophy-command: "iagive %player% bee_pirate:kraken_purple 1 silent"
+    broadcast: false
+  - id: legendary
+    name: "<gold><b>ѕᴜɴᴋᴇɴ ᴛʀᴇᴀѕᴜʀᴇ ᴄʜᴇѕᴛ</b>"
+    chance: 0.3
+    points: 50
+    trophy-command: "iagive %player% pirate_treasure_new:pirate_treasure_new_chest 1 silent"
+    broadcast: true
+
+rewards:
+  # The key goes to the highest-placed ELIGIBLE player (see fairness).
+  key-command: "crates key give %player% crafted_pirate 1 -s"
+  # Shards by RAW placing. The key recipient gets the key INSTEAD of their placement shards.
+  placement-shards: [5, 3, 2]
+  # Shards for every player with >= 1 pirate catch who received nothing else.
+  participation-shards: 1
+  shard-command: "iagive %player% craftedsurvival:shard %amount% silent"
+  # Free inventory slots required before an item reward is run; otherwise it is queued (see pending rewards).
+  required-free-slots: 1
+
+fairness:
+  # A player who received the key within this many hours is not eligible for it (can still win shards).
+  key-cooldown-hours: 72
+  # Minimum distinct IP addresses among players with >= 1 pirate catch for the key to be awarded at all.
+  min-distinct-ips: 3
+
+bossbar:
+  enabled: true
+  color: BLUE        # Adventure BossBar.Color
+  overlay: PROGRESS  # Adventure BossBar.Overlay
+  # all = every online player; world = players in region.world only
+  audience: all
+
+sounds:
+  warning: "block.note_block.bell"
+  start: "item.goat_horn.sound.0"
+  pirate-catch: "entity.experience_orb.pickup"
+  legendary: "ui.toast.challenge_complete"
+  end: "entity.player.levelup"
+
+leaderboard:
+  # How often (seconds) the in-memory leaderboard snapshot used by placeholders is rebuilt.
+  refresh-seconds: 2
+  # How many ranks /pirate shows.
+  show-top: 5
+
+database:
+  file: "data.db"
+  # Seconds between batched score flushes to SQLite while an event runs.
+  flush-interval-seconds: 15
+
+discord:
+  # Empty = disabled. Posts are async; failures only log a warning.
+  webhook-url: ""
+  on-start: true
+  on-end: true
+  username: "Pirate's Catch"
+  avatar-url: ""

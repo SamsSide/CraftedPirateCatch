@@ -44,13 +44,17 @@ time left and the current leader. At the end the results are broadcast and rewar
 4. Check the reward commands (`rewards.*`, `loot[].trophy-command`) match your crate and item IDs.
 5. Optional: set `discord.webhook-url`.
 6. `/piratecatch reload`, then `/piratecatch admin schedule` to confirm the next 8 days.
-7. Make a FancyHolograms board at the dock using the placeholders below, for example:
+7. Make a FancyHolograms board at the dock using the placeholders below. This layout matches the spawn "weekly event"
+   board (legacy codes, `update_text_interval: 5`, transparent background, no text shadow, centred):
    ```
-   <gold>⚓ Pirate's Catch
+   &dᴅᴀɪʟʏ ꜰɪѕʜɪɴɢ ʀᴀᴄᴇ
+   &6Pirate's Catch
    %craftedpiratecatch_status%
-   #1 %craftedpiratecatch_top_1_name% - %craftedpiratecatch_top_1_score%
-   #2 %craftedpiratecatch_top_2_name% - %craftedpiratecatch_top_2_score%
-   #3 %craftedpiratecatch_top_3_name% - %craftedpiratecatch_top_3_score%
+   &7&l--------------------
+   &71#&r %craftedpiratecatch_top_1_name% &7- &d%craftedpiratecatch_top_1_score% ⚓
+   ...one line per rank, up to #10...
+   &7&l--------------------
+   &7#%craftedpiratecatch_rank%&r %player_name% &7- &d%craftedpiratecatch_score% ⚓
    ```
 8. Rehearse with `/piratecatch admin test 5`. It gives no rewards and records nothing.
 

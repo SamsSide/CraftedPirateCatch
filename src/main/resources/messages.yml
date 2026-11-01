@@ -25,7 +25,7 @@ reload-failed: "<prefix><red>Reload failed — check the console for details. Th
 # ── /pirate ──────────────────────────────────────────────────────
 # info-live / info-next / info-ended / info-disabled are also used (without the
 # prefix) by %craftedpiratecatch_status%, so keep them on one line.
-info-live: "<prefix><gray>Pirate's Catch is <green>live</green> at the spawn dock <dark_gray>»</dark_gray> <white><timeleft></white> <gray>left"
+info-live: "<prefix><gray>Pirate's Catch is <green>live</green> at the spawn dock <dark_gray>(<white><timeleft></white> left)</dark_gray>"
 info-next: "<prefix><gray>Next Pirate's Catch: <yellow><time></yellow> <dark_gray>(in <in>)</dark_gray>"
 info-ended: "<prefix><gray>Pirate's Catch has finished for this season. Thanks for fishing!"
 info-disabled: "<prefix><gray>Pirate's Catch isn't scheduled right now."

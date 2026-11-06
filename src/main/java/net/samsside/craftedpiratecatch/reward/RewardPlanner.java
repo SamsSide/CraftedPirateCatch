@@ -25,6 +25,11 @@ public final class RewardPlanner {
     private RewardPlanner() {
     }
 
+    /** Start of the key-cooldown window; {@code hours <= 0} gives {@link Long#MAX_VALUE}, so no cooldown at all. */
+    public static long cooldownSince(int hours, long nowMs) {
+        return hours <= 0 ? Long.MAX_VALUE : nowMs - hours * 3_600_000L;
+    }
+
     public static FinalizePlan<Allocation> plan(List<ScoreRow> scores, Set<UUID> cooldown, PluginConfig cfg,
                                                 long nowMs, Consumer<String> warn) {
         List<Ranked> input = new ArrayList<>(scores.size());

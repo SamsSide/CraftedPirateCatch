@@ -349,7 +349,7 @@ public final class EventManager {
         endRuntime(ev);
         PluginConfig cfg = plugin.cfg();
         long now = System.currentTimeMillis();
-        long cooldownSince = now - cfg.keyCooldownHours * 3_600_000L;
+        long cooldownSince = RewardPlanner.cooldownSince(cfg.keyCooldownHours, now);
         plugin.db().<Allocation>finalizeEvent(ev::id, rows, cooldownSince, now,
                         (scores, cooldown) -> RewardPlanner.plan(scores, cooldown, cfg, now, log::warning))
                 .whenComplete((plan, ex) -> plugin.sync(() -> {

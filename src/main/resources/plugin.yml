@@ -11,6 +11,7 @@ libraries:
 commands:
   piratecatch:
     description: Pirate's Catch fishing event.
+    permission: craftedpiratecatch.use
     aliases: [pirate]
 permissions:
   craftedpiratecatch.use:

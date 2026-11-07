@@ -7,6 +7,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -35,11 +37,19 @@ public final class Database {
     public static final String SKIPPED = "SKIPPED";
     public static final String MISSED = "MISSED";
 
-    /** Statuses that close a rotation day for scheduling. */
+    /** Statuses that close a session (or, for a whole-day record, every session of its day) for scheduling. */
     public static final Set<String> CLOSED = Set.of(FINISHED, CANCELLED, SKIPPED, MISSED);
 
+    /** The schema version this build writes, kept in {@code PRAGMA user_version}. */
+    public static final int SCHEMA_VERSION = 2;
+
+    /** {@code events.session} of a pre-v2 row: a whole-day record that closes every session of its day. */
+    public static final int WHOLE_DAY = -1;
+
+    private static final DateTimeFormatter BACKUP_STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
+
     public record EventRow(long id, String rotationDay, String slot, long startMs, long endMs,
-                           String status, String startedBy, boolean finalized) {
+                           String status, String startedBy, boolean finalized, int session) {
     }
 
     public record ScoreRow(UUID uuid, String name, String ip, int points, int pirateCatches, long lastIncreaseMs) {
@@ -100,12 +110,22 @@ public final class Database {
                     throw new SQLException("Could not create " + parent);
                 }
                 Connection c = DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
-                try (Statement st = c.createStatement()) {
-                    st.execute("PRAGMA journal_mode=WAL");
-                    st.execute("PRAGMA foreign_keys=ON");
-                    st.execute("PRAGMA busy_timeout=5000");
+                try {
+                    try (Statement st = c.createStatement()) {
+                        st.execute("PRAGMA journal_mode=WAL");
+                        st.execute("PRAGMA foreign_keys=ON");
+                        st.execute("PRAGMA busy_timeout=5000");
+                    }
+                    migrate(c, dbFile, log);
+                    createSchema(c);
+                } catch (SQLException e) {
+                    try {
+                        c.close();
+                    } catch (SQLException closeFailure) {
+                        e.addSuppressed(closeFailure);
+                    }
+                    throw e;
                 }
-                createSchema(c);
                 conn = c;
                 file = dbFile;
                 log.info("Database connected: " + dbFile.getName());
@@ -132,9 +152,10 @@ public final class Database {
                       end_ms        INTEGER NOT NULL,
                       status        TEXT    NOT NULL,
                       started_by    TEXT    NOT NULL,
-                      finalized     INTEGER NOT NULL DEFAULT 0
+                      finalized     INTEGER NOT NULL DEFAULT 0,
+                      session       INTEGER NOT NULL DEFAULT -1
                     )""");
-            st.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_events_day ON events(rotation_day)");
+            st.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_events_day_session ON events(rotation_day, session)");
             st.execute("""
                     CREATE TABLE IF NOT EXISTS scores (
                       event_id         INTEGER NOT NULL REFERENCES events(id),
@@ -168,7 +189,88 @@ public final class Database {
                       created_ms INTEGER NOT NULL
                     )""");
             st.execute("CREATE INDEX IF NOT EXISTS ix_pending_uuid ON pending_rewards(uuid)");
+            if (userVersion(c) == 0) {
+                st.execute("PRAGMA user_version = " + SCHEMA_VERSION);
+            }
         }
+    }
+
+    /**
+     * Bring a v1 file to schema v2 in place: back it up with {@code VACUUM INTO} (which reads through
+     * the WAL), then add {@code events.session} (old rows become {@link #WHOLE_DAY}) and swap the
+     * unique index, all in one transaction. A fresh file or a v2 file is left untouched; a file newer
+     * than this build is refused. A failed backup throws before anything is altered.
+     */
+    static void migrate(Connection c, File dbFile, Logger log) throws SQLException {
+        int version = userVersion(c);
+        if (version > SCHEMA_VERSION) {
+            throw new SQLException(dbFile.getName() + " schema v" + version
+                    + " is newer than this plugin supports (v" + SCHEMA_VERSION + ")");
+        }
+        if (!tableExists(c, "events") || hasColumn(c, "events", "session")) {
+            return; // fresh file (createSchema builds v2) or already v2
+        }
+        File backup = new File(dbFile.getAbsoluteFile().getParentFile(),
+                dbFile.getName() + ".v1-backup-" + BACKUP_STAMP.format(LocalDateTime.now()));
+        if (backup.exists()) {
+            throw new SQLException("Backup target " + backup.getName() + " already exists - not migrating");
+        }
+        try (PreparedStatement ps = c.prepareStatement("VACUUM INTO ?")) {
+            ps.setString(1, backup.getAbsolutePath());
+            ps.execute();
+        }
+        log.info("Backed up " + dbFile.getName() + " to " + backup.getName() + " before the schema v2 migration.");
+        int rows;
+        boolean auto = c.getAutoCommit();
+        c.setAutoCommit(false);
+        try (Statement st = c.createStatement()) {
+            st.execute("ALTER TABLE events ADD COLUMN session INTEGER NOT NULL DEFAULT -1");
+            st.execute("DROP INDEX IF EXISTS ux_events_day");
+            st.execute("CREATE UNIQUE INDEX ux_events_day_session ON events(rotation_day, session)");
+            st.execute("PRAGMA user_version = " + SCHEMA_VERSION);
+            try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM events")) {
+                rs.next();
+                rows = rs.getInt(1);
+            }
+            c.commit();
+        } catch (SQLException e) {
+            try {
+                c.rollback();
+            } catch (SQLException r) {
+                e.addSuppressed(r);
+            }
+            throw e;
+        } finally {
+            c.setAutoCommit(auto);
+        }
+        log.info("Database migrated to schema v2 (" + rows + " event record(s) kept as whole-day records).");
+    }
+
+    static int userVersion(Connection c) throws SQLException {
+        try (Statement st = c.createStatement(); ResultSet rs = st.executeQuery("PRAGMA user_version")) {
+            return rs.next() ? rs.getInt(1) : 0;
+        }
+    }
+
+    static boolean tableExists(Connection c, String table) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?")) {
+            ps.setString(1, table);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    /** {@code table} is an internal constant, never user input (identifiers cannot be bound). */
+    static boolean hasColumn(Connection c, String table, String column) throws SQLException {
+        try (Statement st = c.createStatement(); ResultSet rs = st.executeQuery("PRAGMA table_info(" + table + ")")) {
+            while (rs.next()) {
+                if (column.equalsIgnoreCase(rs.getString("name"))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     // ------------------------------------------------------------------ events
@@ -177,35 +279,36 @@ public final class Database {
         return submit(c -> {
             List<EventRow> out = new ArrayList<>();
             try (PreparedStatement ps = c.prepareStatement(
-                    "SELECT id, rotation_day, slot, start_ms, end_ms, status, started_by, finalized FROM events");
+                    "SELECT id, rotation_day, slot, start_ms, end_ms, status, started_by, finalized, session FROM events");
                  ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     out.add(new EventRow(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getLong(4),
-                            rs.getLong(5), rs.getString(6), rs.getString(7), rs.getInt(8) != 0));
+                            rs.getLong(5), rs.getString(6), rs.getString(7), rs.getInt(8) != 0, rs.getInt(9)));
                 }
             }
             return out;
         });
     }
 
-    /** Insert an events row and return its id. Fails on the unique rotation_day index. */
-    public CompletableFuture<Long> insertEvent(String day, String slot, long startMs, long endMs,
+    /** Insert an events row and return its id. Fails on the unique (rotation_day, session) index. */
+    public CompletableFuture<Long> insertEvent(String day, int session, String slot, long startMs, long endMs,
                                                String status, String startedBy) {
-        return submit(c -> insertEvent(c, day, slot, startMs, endMs, status, startedBy));
+        return submit(c -> insertEvent(c, day, session, slot, startMs, endMs, status, startedBy));
     }
 
-    static long insertEvent(Connection c, String day, String slot, long startMs, long endMs,
+    static long insertEvent(Connection c, String day, int session, String slot, long startMs, long endMs,
                             String status, String startedBy) throws SQLException {
         try (PreparedStatement ps = c.prepareStatement(
-                "INSERT INTO events(rotation_day, slot, start_ms, end_ms, status, started_by, finalized) "
-                        + "VALUES (?,?,?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
+                "INSERT INTO events(rotation_day, session, slot, start_ms, end_ms, status, started_by, finalized) "
+                        + "VALUES (?,?,?,?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, day);
-            ps.setString(2, slot);
-            ps.setLong(3, startMs);
-            ps.setLong(4, endMs);
-            ps.setString(5, status);
-            ps.setString(6, startedBy);
-            ps.setInt(7, CLOSED.contains(status) && !SKIPPED.equals(status) ? 1 : 0);
+            ps.setInt(2, session);
+            ps.setString(3, slot);
+            ps.setLong(4, startMs);
+            ps.setLong(5, endMs);
+            ps.setString(6, status);
+            ps.setString(7, startedBy);
+            ps.setInt(8, CLOSED.contains(status) && !SKIPPED.equals(status) ? 1 : 0);
             ps.executeUpdate();
             try (ResultSet keys = ps.getGeneratedKeys()) {
                 if (keys.next()) {
@@ -216,12 +319,13 @@ public final class Database {
         throw new SQLException("No id returned for events insert");
     }
 
-    /** Delete a SKIPPED row for {@code day}. True if a row was removed. */
-    public CompletableFuture<Boolean> deleteSkipped(String day) {
+    /** Delete the SKIPPED row for {@code day}'s {@code session}. True if a row was removed. */
+    public CompletableFuture<Boolean> deleteSkipped(String day, int session) {
         return submit(c -> {
             try (PreparedStatement ps = c.prepareStatement(
-                    "DELETE FROM events WHERE rotation_day = ? AND status = 'SKIPPED'")) {
+                    "DELETE FROM events WHERE rotation_day = ? AND session = ? AND status = 'SKIPPED'")) {
                 ps.setString(1, day);
+                ps.setInt(2, session);
                 return ps.executeUpdate() > 0;
             }
         });

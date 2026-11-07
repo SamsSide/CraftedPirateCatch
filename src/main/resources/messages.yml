@@ -1,49 +1,79 @@
+# ═══════════════════════════════════════════════════════════════════
+#  CraftedPirateCatch — messages.yml
+#  Every player-facing string. Supports legacy &/§ codes AND MiniMessage,
+#  and both can be mixed on one line. Use <newline> for a multi-line message.
+#
+#  EMPTY = OFF: set any message to "" and nothing is sent.
+#  <prefix> works in every message. Player names are inserted unparsed,
+#  so they can never inject formatting.
+#  New keys added by a plugin update are merged in automatically — your
+#  own values are never overwritten.
+# ═══════════════════════════════════════════════════════════════════
 config-version: 1
-prefix: "<dark_aqua><b>⚓ ᴘɪʀᴀᴛᴇ'ѕ ᴄᴀᴛᴄʜ</b></dark_aqua> <dark_gray>»</dark_gray> "
+
+prefix: "<gold>ᴘɪʀᴀᴛᴇ'ѕ ᴄᴀᴛᴄʜ</gold> <dark_gray>»</dark_gray> "
 time-format: "EEE d MMM HH:mm"          # java DateTimeFormatter pattern for <time>
+
+# ── Command feedback / errors ────────────────────────────────────
 no-permission: "<prefix><red>You don't have permission to do that."
-player-only: "<prefix><red>Only players can use that."
-unknown-player: "<prefix><red>Player <white><player></white> has never joined."
-usage: "<prefix><gray>Usage: <white><usage>"
-reloaded: "<prefix><green>Config, messages and database reloaded."
-reload-failed: "<prefix><red>Reload failed - check console. Previous config kept."
-info-live: "<prefix><gold>Pirate's Catch is LIVE!</gold> <gray>Fish at the spawn dock - <white><timeleft></white> left."
-info-next: "<prefix><gray>Next Pirate's Catch: <white><time></white> <dark_gray>(</dark_gray><yellow>in <in></yellow><dark_gray>)</dark_gray>"
+player-only: "<prefix><red>Only players can use that command."
+unknown-player: "<prefix><red>Player <yellow><player></yellow> has never been seen on this server."
+usage: "<prefix><gray>Usage: <yellow><usage></yellow>"
+reloaded: "<prefix><green>Reloaded config, messages and database."
+reload-failed: "<prefix><red>Reload failed — check the console for details. The previous config was kept."
+
+# ── /pirate ──────────────────────────────────────────────────────
+# info-live / info-next / info-ended / info-disabled are also used (without the
+# prefix) by %craftedpiratecatch_status%, so keep them on one line.
+info-live: "<prefix><gray>Pirate's Catch is <green>live</green> at the spawn dock <dark_gray>(<white><timeleft></white> left)</dark_gray>"
+info-next: "<prefix><gray>Next Pirate's Catch in <yellow><in></yellow>"
 info-ended: "<prefix><gray>Pirate's Catch has finished for this season. Thanks for fishing!"
 info-disabled: "<prefix><gray>Pirate's Catch isn't scheduled right now."
-info-your-score: "<gray>Your score: <gold><score></gold> <dark_gray>|</dark_gray> Rank: <gold><rank></gold>"
-top-header: "<gold><b>ᴛᴏᴘ ꜰɪѕʜᴇʀѕ</b>"
-top-line: "<gray>#<rank> <white><name></white> <dark_gray>-</dark_gray> <gold><score></gold>"
-top-empty: "<gray>No pirate catches yet - be the first!"
-warning-broadcast: "<prefix><gold>Pirate's Catch starts in <white><minutes> minute(s)</white>! <gray>Head to the spawn dock."
-start-broadcast: "<prefix><gold><b>Pirate's Catch has begun!</b></gold> <gray>Fish at the spawn dock for <white><duration></white> - top fisher wins a <red>Crafted Pirate Key</red>!"
-bossbar-title: "<gold>⚓ Pirate's Catch</gold> <gray>- <white><timeleft></white> left - Leader: <yellow><leader></yellow> (<score>)"
+info-your-score: "<prefix><gray>Your standing: <white><score></white> <dark_gray>(rank <rank>)</dark_gray>"
+top-header: "<prefix><gold>Leaderboard</gold> <dark_gray>—</dark_gray> <yellow>Pirate's Catch</yellow>"
+top-line: " <gold>#<rank></gold> <yellow><name></yellow> <dark_gray>-</dark_gray> <white><score></white>"
+top-empty: " <gray>No pirate catches yet — be the first!"
+
+# ── Broadcasts ───────────────────────────────────────────────────
+warning-broadcast: "<prefix><gray>Pirate's Catch starts in <yellow><minutes> minute(s)</yellow>! Head to the <white>spawn dock</white>."
+start-broadcast: "<newline><gold>⚓</gold> <b><gold>PIRATE'S CATCH STARTED</gold></b><newline> <yellow>Fish at the spawn dock for pirate loot</yellow><newline> <white>Top fisher wins a Crafted Pirate Key</white><newline> <gray>Duration <dark_gray>»</dark_gray> <white><duration></white><newline>"
+legendary-broadcast: "<prefix><yellow><player></yellow> <gray>hauled up a</gray> <tier><gray>!"
+# The end broadcast is sent line by line: header, one end-broadcast-line per rank,
+# then end-winner / end-no-key-turnout / end-no-key-eligible / end-nobody.
+end-broadcast-header: "<newline><gold>⚓</gold> <gold><b>PIRATE'S CATCH OVER</b></gold>"
+end-broadcast-line: " <gold>#<rank></gold> <yellow><name></yellow> <dark_gray>-</dark_gray> <white><score></white>"
+end-winner: " <yellow><player></yellow> <gray>wins a</gray> <gold>Crafted Pirate Key</gold><gray>!</gray><newline>"
+end-no-key-turnout: " <gray>Not enough fishers took part, so no key was awarded — shards were still paid out.<newline>"
+end-no-key-eligible: " <gray>No eligible fisher scored, so no key was awarded.<newline>"
+end-nobody: " <gray>Nobody caught any pirate loot this time. Better luck next tide!<newline>"
+
+# ── Boss bar (no prefix) ─────────────────────────────────────────
+bossbar-title: "<gold>⚓ ᴘɪʀᴀᴛᴇ'ѕ ᴄᴀᴛᴄʜ</gold> <dark_gray>»</dark_gray> <white><timeleft></white> <gray>left <dark_gray>|</dark_gray> <gray>Leader <yellow><leader></yellow> <dark_gray>(<score>)</dark_gray>"
 bossbar-no-leader: "-"
-catch-message: "<prefix><gray>You fished up <tier>! <gold>+<points></gold> <dark_gray>(</dark_gray><gray>total <white><score></white></gray><dark_gray>)</dark_gray>"
-trophy-message: "<prefix><green>You earned a trophy for your first <tier> of the event!"
-legendary-broadcast: "<prefix><gold><b><player></b></gold> <gray>hauled up a</gray> <tier><gray>!"
+
+# ── Catches ──────────────────────────────────────────────────────
+catch-message: "<prefix><gray>You fished up <tier><gray>! <green>+<points></green> <dark_gray>(total <score>)</dark_gray>"
+trophy-message: "<prefix><green>You earned a trophy for your first <tier><green> of the event!"
 outside-region-hint: "<prefix><gray>Only catches at the <white>spawn dock</white> count for Pirate's Catch."
-end-broadcast-header: "<prefix><gold><b>Pirate's Catch is over!</b>"
-end-broadcast-line: "<gray>#<rank> <white><name></white> <dark_gray>-</dark_gray> <gold><score></gold>"
-end-winner: "<prefix><white><player></white> <gold>wins a Crafted Pirate Key!"
-end-no-key-turnout: "<prefix><gray>Not enough fishers took part today, so no key was awarded - shards were still paid out."
-end-no-key-eligible: "<prefix><gray>No eligible fisher scored today, so no key was awarded."
-end-nobody: "<prefix><gray>Nobody caught any pirate loot this time. Better luck next tide!"
-reward-key: "<prefix><gold>You won a Crafted Pirate Key!"
-reward-shards: "<prefix><aqua>You earned <amount> shard(s) for placing #<rank>!"
-reward-participation: "<prefix><aqua>You earned <amount> shard(s) for taking part!"
-reward-cooldown-note: "<prefix><gray>You topped the board, but you won a key in the last <hours>h - it passes to the next fisher. You still get your shards!"
-reward-queued: "<prefix><yellow>Your inventory is full - your Pirate's Catch reward is waiting. Free a slot and it will arrive."
+
+# ── Rewards ──────────────────────────────────────────────────────
+reward-key: "<prefix><green>You won a <gold>Crafted Pirate Key</gold>!"
+reward-shards: "<prefix><green>You finished <gold>#<rank></gold> and earned <dark_aqua><amount> Shards</dark_aqua>!"
+reward-participation: "<prefix><green>You earned <dark_aqua><amount> Shards</dark_aqua> for taking part!"
+reward-cooldown-note: "<prefix><gray>You topped the board, but you won a key in the last <white><hours>h</white> — it passes to the next fisher. You still get your shards!"
+reward-queued: "<prefix><yellow>Your inventory is full — your Pirate's Catch reward is waiting. Free a slot and it will arrive."
 reward-delivered: "<prefix><green>Your queued Pirate's Catch reward has been delivered."
-admin-started: "<prefix><green>Pirate's Catch started (today's event)."
+
+# ── Staff ────────────────────────────────────────────────────────
+admin-started: "<prefix><green>Started today's <yellow>Pirate's Catch</yellow>."
 admin-already-ran: "<prefix><red>Today's event has already run or is running."
-admin-not-running: "<prefix><red>No event is running."
-admin-stopped: "<prefix><green>Event stopped - rewards are being given out."
-admin-cancelled: "<prefix><yellow>Event cancelled - no rewards given."
+admin-not-running: "<prefix><gray>There is no event running right now."
+admin-stopped: "<prefix><green>Event ended early — winners have been awarded."
+admin-cancelled: "<prefix><yellow>Event cancelled — no prizes were given."
 admin-skipped: "<prefix><yellow>Today's Pirate's Catch has been skipped."
 admin-unskipped: "<prefix><green>Today's Pirate's Catch is back on the schedule."
-admin-test-started: "<prefix><aqua>TEST event started for <minutes> minute(s) - no rewards, no records."
-admin-cooldown-reset: "<prefix><green>Key cooldown reset for <player>."
-admin-status: "<prefix><gray>State: <white><state></white> | Rotation day: <white><day></white> | Slot: <white><slot></white> | Next: <white><time></white>"
-admin-schedule-line: "<gray><day> <dark_gray>-</dark_gray> <white><time></white>"
+admin-test-started: "<prefix><green>Started a <aqua>TEST</aqua> event for <yellow><minutes> minute(s)</yellow> — no rewards, no records."
+admin-cooldown-reset: "<prefix><green>Reset <yellow><player></yellow>'s key cooldown."
+admin-status: "<prefix><gray>State: <white><state></white> <dark_gray>|</dark_gray> Rotation day: <white><day></white> <dark_gray>|</dark_gray> Session: <white><session></white> <dark_gray>|</dark_gray> Slot: <white><slot></white> <dark_gray>|</dark_gray> Next: <white><time></white>"
+admin-schedule-line: " <gold><day></gold> <dark_gray>(<session>)</dark_gray> <dark_gray>-</dark_gray> <white><time></white>"
 test-prefix: "<aqua>[TEST]</aqua> "

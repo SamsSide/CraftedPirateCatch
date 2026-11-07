@@ -15,6 +15,8 @@ public final class ActiveEvent {
 
     public final boolean test;
     public final LocalDate day; // null for TEST
+    /** 0-based session; -1 for TEST or a pre-upgrade whole-day record. */
+    public final int session;
     public final String slot;   // "HH:mm", or "-" for TEST
     public final long startMs;
     public final long endMs;
@@ -29,9 +31,10 @@ public final class ActiveEvent {
     public boolean regionErrorLogged;
     public boolean finalizing;
 
-    public ActiveEvent(boolean test, LocalDate day, String slot, long startMs, long endMs) {
+    public ActiveEvent(boolean test, LocalDate day, int session, String slot, long startMs, long endMs) {
         this.test = test;
         this.day = day;
+        this.session = session;
         this.slot = slot;
         this.startMs = startMs;
         this.endMs = endMs;

@@ -4,7 +4,9 @@ config-version: 1
 schedule:
   # All times/dates are interpreted in this zone.
   timezone: "Europe/London"
-  # Rotation day N uses slots[(N - first-day) mod size]. HH:mm, 24h.
+  # Each entry is ONE rotation day; rotation day N uses slots[(N - first-day) mod size].
+  # "HH:mm" = one event that day; "HH:mm + HH:mm" = two events that day (24h).
+  # Same pair every day:  slots: ["13:00 + 21:00"]
   slots: ["13:00", "17:00", "21:00", "01:00"]
   # A slot earlier than this time is the LATE-NIGHT session of its rotation day,
   # i.e. it runs at that time on the NEXT calendar date (01:00 belongs to the day before).

@@ -17,7 +17,7 @@ daily** so players in every timezone get a fair shot. The plugin runs everything
 
 ## How a day works
 
-Each **rotation day** has one event, one hour long. The start time moves one step each day:
+Each **rotation day** has one event (or two, see *Two events a day*), one hour long by default. The start time moves one step each day:
 
 | Rotation day | Start (UK time, Europe/London) | Actually runs on |
 |---|---|---|
@@ -31,6 +31,26 @@ Each **rotation day** has one event, one hour long. The start time moves one ste
 01:00 slot of rotation day 5 Nov runs at 01:00 on 6 Nov. "Today", skip, the missed-slot rule, `/pirate` and the
 placeholders all work in rotation days, not calendar dates. For staff commands, "today" runs from 06:00 to 06:00.
 
+### Two events a day
+
+An entry in `slots` can hold two times joined by `+`: `"HH:mm + HH:mm"` means two events (sessions) on that rotation
+day, while a plain `"HH:mm"` stays one event, exactly as before. To run the same pair every day:
+
+```yaml
+schedule:
+  slots: ["13:00 + 21:00"]
+```
+
+- **Order:** the sessions of a day are ordered by time after `day-rollover`, so a late-night time is always last.
+  With rollover 06:00, `"01:00 + 21:00"` runs 21:00 first and then 01:00 on the next calendar date.
+- **Validation:** at most 2 times per entry, the two times must differ, and they must be at least `duration-minutes`
+  apart (exactly `duration-minutes` is allowed). An invalid entry logs a SEVERE line
+  (`Schedule slot entry '<raw>' is invalid (<reason>) - using only '<first>'.`) and runs only its first time. An entry
+  with no valid time is dropped with a WARNING.
+- **Each session is an ordinary event:** its own warnings, start broadcast, boss bar, results, rewards and Discord
+  posts. Players see the same messages as for any event; nothing names the session.
+- Entries with one and two times can be mixed in one rotation; the session count is per day.
+
 Before the start, warnings go out at 15, 5 and 1 minutes. At the start there is a broadcast and a boss bar that shows the
 time left and the current leader. At the end the results are broadcast and rewards are paid.
 
@@ -43,14 +63,18 @@ time left and the current leader. At the end the results are broadcast and rewar
 3. Set `schedule.first-day` and `schedule.last-day` (inclusive, `yyyy-MM-dd`). Defaults: 2026-11-02 to 2026-11-30.
 4. Check the reward commands (`rewards.*`, `loot[].trophy-command`) match your crate and item IDs.
 5. Optional: set `discord.webhook-url`.
-6. `/piratecatch reload`, then `/piratecatch admin schedule` to confirm the next 8 days.
-7. Make a FancyHolograms board at the dock using the placeholders below, for example:
+6. `/piratecatch reload`, then `/piratecatch admin schedule` to confirm the next 8 sessions.
+7. Make a FancyHolograms board at the dock using the placeholders below. This layout matches the spawn "weekly event"
+   board (legacy codes, `update_text_interval: 5`, transparent background, no text shadow, centred):
    ```
-   <gold>⚓ Pirate's Catch
+   &dᴅᴀɪʟʏ ꜰɪѕʜɪɴɢ ʀᴀᴄᴇ
+   &6Pirate's Catch
    %craftedpiratecatch_status%
-   #1 %craftedpiratecatch_top_1_name% - %craftedpiratecatch_top_1_score%
-   #2 %craftedpiratecatch_top_2_name% - %craftedpiratecatch_top_2_score%
-   #3 %craftedpiratecatch_top_3_name% - %craftedpiratecatch_top_3_score%
+   &7&l--------------------
+   &71#&r %craftedpiratecatch_top_1_name% &7- &d%craftedpiratecatch_top_1_score% ⚓
+   ...one line per rank, up to #10...
+   &7&l--------------------
+   &7#%craftedpiratecatch_rank%&r %player_name% &7- &d%craftedpiratecatch_score% ⚓
    ```
 8. Rehearse with `/piratecatch admin test 5`. It gives no rewards and records nothing.
 
@@ -63,19 +87,23 @@ The base command is `/piratecatch`, with the alias `/pirate`.
 | `/pirate` | `craftedpiratecatch.use` | **Live:** says it is live and how long is left, shows your score and rank (players only), and the top 5. **Scheduled:** the next start time (UK) and a countdown. **Season over:** says it has finished. **Scheduling disabled:** says it isn't scheduled. Works from the console. |
 | `/pirate top` | `craftedpiratecatch.use` | The top `leaderboard.show-top` players of the running event, or "no catches yet". |
 | `/piratecatch reload` | `craftedpiratecatch.reload` | Reloads `config.yml`, `messages.yml`, reopens the database and rebuilds caches. A running event keeps running, and new loot/reward settings apply to later catches and to its finalize. If the YAML can't be parsed, it says so and keeps the previous config. |
-| `/piratecatch admin start` | `craftedpiratecatch.admin.start` | Starts **today's** event now (rotation day, 06:00-to-06:00), for `duration-minutes`, under normal rules, and uses up today's slot. Refuses if today already has an event record (ran, running, skipped, missed or cancelled), or if today is outside the season. If a TEST event is running, it is ended first. |
+| `/piratecatch admin start [session]` | `craftedpiratecatch.admin.start` | Starts a session of **today** (rotation day, 06:00-to-06:00) now, for `duration-minutes`, under normal rules, and uses up that session. No argument: today's first session (in start order) that has no record and whose window hasn't ended. With an argument: that session, which must have no record (ran, running, skipped, missed or cancelled). Refuses outside the season or while a non-TEST event is running. If a TEST event is running, it is ended first. |
 | `/piratecatch admin stop` | `craftedpiratecatch.admin.stop` | Ends the running event now and awards normally. |
 | `/piratecatch admin cancel` | `craftedpiratecatch.admin.cancel` | Ends the running event with **no rewards** (recorded as CANCELLED). For a TEST event it just ends it. |
-| `/piratecatch admin skip` | `craftedpiratecatch.admin.skip` | Marks today's rotation day SKIPPED if its event hasn't started. Refuses if it is running (use cancel). |
-| `/piratecatch admin unskip` | `craftedpiratecatch.admin.skip` | Puts today back on the schedule if it was skipped and its window hasn't started. |
+| `/piratecatch admin skip [session]` | `craftedpiratecatch.admin.skip` | Marks a session of today SKIPPED if it hasn't started. No argument: the first of today's sessions that hasn't started and has no record. Refuses if it is running or already ran (use cancel). |
+| `/piratecatch admin unskip [session]` | `craftedpiratecatch.admin.skip` | Puts a skipped session of today back on the schedule if its start hasn't passed. No argument: the first such skipped session. A day skipped before the 1.1.0 upgrade can't be unskipped. |
 | `/piratecatch admin test [minutes]` | `craftedpiratecatch.admin.test` | A TEST event, default 5 minutes, range 1 to 60. No rewards, no trophies, no database records and no Discord post, and it doesn't use the day. Broadcasts and the boss bar carry the `[TEST]` prefix. Refuses while any event runs. If a real event's start time arrives during a test, the test ends and the real event starts. |
-| `/piratecatch admin status` | `craftedpiratecatch.admin.status` | State (IDLE / RUNNING / TEST / SEASON_OVER / DISABLED), the running or next rotation day and slot, and the next start time. |
-| `/piratecatch admin schedule` | `craftedpiratecatch.admin.status` | The next 8 open rotation days and their start times. |
+| `/piratecatch admin status` | `craftedpiratecatch.admin.status` | State (IDLE / RUNNING / TEST / SEASON_OVER / DISABLED), the running or next rotation day, session (`n/N`) and slot, and the next start time. |
+| `/piratecatch admin schedule` | `craftedpiratecatch.admin.status` | The next 8 open **sessions** (not days), each with its rotation day, `(n/N)` and start time. |
 | `/piratecatch admin resetcooldown <player>` | `craftedpiratecatch.admin.resetcooldown` | Deletes that player's key wins from the last `key-cooldown-hours`, so they can win the key again. |
 
 Wrong arguments show the usage message, and missing permission shows `no-permission`. Tab-complete only offers what you
 can run. `admin` only appears if you hold at least one admin node, and under it only your permitted sub-commands are
 listed. `resetcooldown` completes online player names, and `test` suggests `5 10 15`.
+
+`[session]` on `start`, `skip` and `unskip` is 1-based and only matters on a two-event day; tab-complete offers
+`1 2` when today has two sessions. Anything that isn't a whole number from 1 to today's session count (including `2` on a
+one-event day) shows the usage, e.g. `/pirate admin skip [1-2]`.
 
 ## Permissions
 
@@ -143,7 +171,8 @@ At the end:
 Fairness rules:
 
 - **Key cooldown:** anyone who won the key in the last `key-cooldown-hours` (72) isn't eligible for it. They still place
-  and get shards. If they topped the board they're told why (`reward-cooldown-note`).
+  and get shards. If they topped the board they're told why (`reward-cooldown-note`). Set it to `0` for no cooldown at
+  all: a player can win the key at every event, including both sessions of a day, and the note is never sent.
 - **Minimum turnout:** the key is only given if the ranked players come from at least `min-distinct-ips` (3) **distinct
   IP addresses** (the real client IP as forwarded by Velocity, Bedrock included). Players sharing an IP still play, score,
   place and get shards; they just count once for turnout. Below the minimum, no key is given and shards are still paid.
@@ -161,7 +190,10 @@ config-version: 1                # don't edit; used for auto-merge
 
 schedule:
   timezone: "Europe/London"      # all times/dates use this zone (invalid -> Europe/London)
-  slots: ["13:00", "17:00", "21:00", "01:00"]   # rotation day N uses slots[(N - first-day) mod size]; bad entries dropped
+  # Each entry is ONE rotation day; rotation day N uses slots[(N - first-day) mod size].
+  # "HH:mm" = one event that day; "HH:mm + HH:mm" = two events that day (24h).
+  # Same pair every day:  slots: ["13:00 + 21:00"]
+  slots: ["13:00", "17:00", "21:00", "01:00"]
   day-rollover: "06:00"          # a slot earlier than this is the late-night session (runs on the NEXT calendar date)
   first-day: "2026-11-02"        # first rotation day (inclusive)
   last-day: "2026-11-30"         # last rotation day (inclusive); its late slot may fall on 1 Dec
@@ -196,7 +228,7 @@ rewards:
   required-free-slots: 1         # free slots needed before an item reward runs; otherwise it waits
 
 fairness:
-  key-cooldown-hours: 72         # recent key winners can't win the key again within this window
+  key-cooldown-hours: 72  # 0 = no cooldown at all (recent key winners can't win the key again within this window)
   min-distinct-ips: 3            # distinct IPs among ranked players needed for the key to be awarded
 
 bossbar:
@@ -261,8 +293,11 @@ look like `1h 05m`, `12m` or `45s`. During a TEST event, every broadcast and the
 | `reward-participation` | `<amount>` |
 | `reward-cooldown-note` | `<hours>` |
 | `admin-test-started` | `<minutes>` |
-| `admin-status` | `<state>`, `<day>`, `<slot>`, `<time>` |
-| `admin-schedule-line` | `<day>`, `<time>` |
+| `admin-status` | `<state>`, `<day>`, `<session>`, `<slot>`, `<time>` |
+| `admin-schedule-line` | `<day>`, `<session>`, `<time>` |
+
+`<session>` is `n/N` (1-based, e.g. `1/2`; `1/1` on one-a-day days), or `-` for a record from before 1.1.0 or when
+nothing is running or upcoming. Existing `messages.yml` files keep their own text; add `<session>` by hand if you want it.
 
 ## Config updates (auto-merge)
 
@@ -296,6 +331,23 @@ command runs.
 **Does the 01:00 slot ever run twice or get skipped around midnight or a clock change?** No. It belongs to the previous
 rotation day, and times are resolved in Europe/London (in a DST gap the time moves forward; in an overlap the earlier
 instant is used).
+
+**I upgraded from 1.0.0. What happens to my data?** On the first start, 1.1.0 copies `data.db` to
+`data.db.v1-backup-<yyyyMMdd-HHmmss>` in the plugin folder (a consistent copy that includes unsaved WAL contents) and
+logs `Backed up data.db to data.db.v1-backup-<ts> before the schema v2 migration.` It then migrates the file in place to
+schema v2 in one transaction and logs `Database migrated to schema v2 (<n> event record(s) kept as whole-day records).`
+Every event, score, trophy, key win and pending reward is kept with the same ids. Days recorded before the upgrade count
+as complete for both sessions of that day. If the backup can't be written, nothing is migrated and the plugin disables
+itself. Later starts and reloads make no new backup.
+
+**How do I roll back to 1.0.0?** Stop the server, put the 1.0.0 jar back, replace `data.db` with the
+`data.db.v1-backup-*` file and delete `data.db-wal` and `data.db-shm`. Anything recorded after the upgrade is lost.
+Don't skip the restore: 1.0.0 refuses to start on a v2 file that has two events on one day.
+
+**I switched to two a day mid-season and see MISSED warnings for past days.** Past days that already had a session-1
+record get their session-2 window checked, and those windows are over, so each is recorded as MISSED with one WARNING
+line per day. This is harmless: nothing is paid or broadcast. Switching before the first start of 1.1.0 avoids it,
+because pre-upgrade days are whole-day records.
 
 **Does it clash with CraftedEvents fishing events?** No. Both plugins can count the same fish independently.
 

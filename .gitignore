@@ -7,3 +7,7 @@ dependency-reduced-pom.xml
 .DS_Store
 Thumbs.db
 *.log
+.claude/ledger/
+.claude/worktrees/
+*.class
+*:Zone.Identifier

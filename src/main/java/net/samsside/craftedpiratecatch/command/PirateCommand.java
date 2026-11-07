@@ -16,7 +16,6 @@ import net.samsside.craftedpiratecatch.event.EventManager;
 import net.samsside.craftedpiratecatch.event.Snapshot;
 import net.samsside.craftedpiratecatch.reward.RewardAllocator.Ranked;
 import net.samsside.craftedpiratecatch.schedule.Rotation;
-import net.samsside.craftedpiratecatch.storage.Database;
 import net.samsside.craftedpiratecatch.util.Durations;
 import net.samsside.craftedpiratecatch.util.Text;
 import org.bukkit.Bukkit;
@@ -188,13 +187,33 @@ public final class PirateCommand implements TabExecutor {
                 }
                 adminResetCooldown(sender, args[2]);
             }
+            case "start", "skip", "unskip" -> {
+                String sessionUsage = subUsage + " [1-" + Math.max(1, todayCount()) + "]";
+                if (args.length > 3) {
+                    usage(sender, sessionUsage);
+                    return;
+                }
+                Integer requested = null;
+                if (args.length == 3) {
+                    try {
+                        requested = Integer.parseInt(args[2]);
+                    } catch (NumberFormatException e) {
+                        usage(sender, sessionUsage);
+                        return;
+                    }
+                }
+                switch (sub) {
+                    case "start" -> adminStart(sender, requested, sessionUsage);
+                    case "skip" -> adminSkip(sender, requested, sessionUsage);
+                    default -> adminUnskip(sender, requested, sessionUsage);
+                }
+            }
             default -> {
                 if (args.length != 2) {
                     usage(sender, subUsage);
                     return;
                 }
                 switch (sub) {
-                    case "start" -> adminStart(sender);
                     case "stop" -> {
                         if (plugin.events().stop()) {
                             msg().send(sender, "admin-stopped");
@@ -209,8 +228,6 @@ public final class PirateCommand implements TabExecutor {
                             msg().send(sender, "admin-not-running");
                         }
                     }
-                    case "skip" -> adminSkip(sender);
-                    case "unskip" -> adminUnskip(sender);
                     case "status" -> adminStatus(sender);
                     case "schedule" -> adminSchedule(sender);
                     default -> usage(sender, base + " admin <" + String.join("|", allowedAdmin(sender)) + ">");
@@ -219,8 +236,8 @@ public final class PirateCommand implements TabExecutor {
         }
     }
 
-    /** Today's rotation day slot, or null after sending info-disabled/info-ended. */
-    private Rotation.Slot today(CommandSender sender) {
+    /** Today's sessions, or null after sending info-disabled/info-ended. */
+    private List<Rotation.Slot> today(CommandSender sender) {
         Rotation rotation = plugin.cfg().rotation;
         if (rotation == null) {
             msg().send(sender, "info-disabled");
@@ -235,59 +252,70 @@ public final class PirateCommand implements TabExecutor {
             msg().send(sender, "info-disabled");
             return null;
         }
-        return rotation.slot(today);
+        return rotation.slots(today);
     }
 
-    private void adminStart(CommandSender sender) {
-        Rotation.Slot slot = today(sender);
-        if (slot == null) {
+    private void adminStart(CommandSender sender, Integer requested, String usage) {
+        List<Rotation.Slot> today = today(sender);
+        if (today == null) {
             return;
         }
         EventManager events = plugin.events();
         ActiveEvent current = events.active();
-        if (events.hasRow(slot.day()) || (current != null && !current.test)) {
+        if (current != null && !current.test) {
             msg().send(sender, "admin-already-ran");
             return;
         }
-        events.startStaff(slot, sender.getName());
-        msg().send(sender, "admin-started");
+        SessionPicker.Pick pick = SessionPicker.start(today, requested, Instant.now(), events::status);
+        switch (pick.outcome()) {
+            case OK -> {
+                events.startStaff(pick.slot(), sender.getName());
+                msg().send(sender, "admin-started");
+            }
+            case BAD_ARG -> usage(sender, usage);
+            default -> msg().send(sender, "admin-already-ran");
+        }
     }
 
-    private void adminSkip(CommandSender sender) {
-        Rotation.Slot slot = today(sender);
-        if (slot == null) {
+    private void adminSkip(CommandSender sender, Integer requested, String usage) {
+        List<Rotation.Slot> today = today(sender);
+        if (today == null) {
             return;
         }
         EventManager events = plugin.events();
-        String status = events.dayStatus(slot.day());
-        if (Database.SKIPPED.equals(status)) {
-            msg().send(sender, "admin-skipped");
-            return;
+        SessionPicker.Pick pick = SessionPicker.skip(today, requested, Instant.now(), events::status);
+        switch (pick.outcome()) {
+            case OK -> {
+                events.skip(pick.slot(), sender.getName());
+                msg().send(sender, "admin-skipped");
+            }
+            case ALREADY_SKIPPED -> msg().send(sender, "admin-skipped");
+            case BAD_ARG -> usage(sender, usage);
+            default -> msg().send(sender, "admin-already-ran");
         }
-        if (status != null || !Instant.now().isBefore(slot.start())) {
-            msg().send(sender, "admin-already-ran");
-            return;
-        }
-        events.skip(slot, sender.getName());
-        msg().send(sender, "admin-skipped");
     }
 
-    private void adminUnskip(CommandSender sender) {
-        Rotation.Slot slot = today(sender);
-        if (slot == null) {
+    private void adminUnskip(CommandSender sender, Integer requested, String usage) {
+        List<Rotation.Slot> today = today(sender);
+        if (today == null) {
             return;
         }
         EventManager events = plugin.events();
-        String status = events.dayStatus(slot.day());
-        if (status == null) {
-            msg().send(sender, "admin-unskipped");
-            return;
+        SessionPicker.Pick pick = SessionPicker.unskip(today, requested, Instant.now(), events::status,
+                s -> events.isWholeDay(s.day()));
+        switch (pick.outcome()) {
+            case OK -> events.unskip(pick.slot().day(), pick.slot().session(),
+                    removed -> msg().send(sender, removed ? "admin-unskipped" : "admin-already-ran"));
+            case ALREADY_UNSKIPPED -> msg().send(sender, "admin-unskipped");
+            case BAD_ARG -> usage(sender, usage);
+            default -> msg().send(sender, "admin-already-ran");
         }
-        if (!Database.SKIPPED.equals(status) || !Instant.now().isBefore(slot.start())) {
-            msg().send(sender, "admin-already-ran");
-            return;
-        }
-        events.unskip(slot.day(), removed -> msg().send(sender, removed ? "admin-unskipped" : "admin-already-ran"));
+    }
+
+    /** Today's session count, minimum 1 for usage text; 0 when disabled (tab-complete). */
+    private int todayCount() {
+        Rotation rotation = plugin.cfg().rotation;
+        return rotation == null ? 0 : rotation.sessionsOn(rotation.todayAt(Instant.now()));
     }
 
     private void adminTest(CommandSender sender, String arg, String usage) {
@@ -339,9 +367,17 @@ public final class PirateCommand implements TabExecutor {
             day = next.day().toString();
             slot = HHMM.format(next.time());
         }
+        String session = "-";
+        if (ev != null && !ev.test) {
+            session = ev.session < 0 ? "-" : (ev.session + 1) + "/"
+                    + Math.max(ev.session + 1, rotation == null ? 0 : rotation.sessionsOn(ev.day));
+        } else if (next != null) {
+            session = next.label();
+        }
         String time = next == null ? "-" : msg().formatTime(next.start());
         msg().send(sender, "admin-status", Text.placeholder("state", state), Text.placeholder("day", day),
-                Text.placeholder("slot", slot), Text.placeholder("time", time));
+                Text.placeholder("session", session), Text.placeholder("slot", slot),
+                Text.placeholder("time", time));
     }
 
     private void adminSchedule(CommandSender sender) {
@@ -357,7 +393,7 @@ public final class PirateCommand implements TabExecutor {
         }
         for (Rotation.Slot s : up) {
             msg().send(sender, "admin-schedule-line", Text.placeholder("day", s.day().toString()),
-                    Text.placeholder("time", msg().formatTime(s.start())));
+                    Text.placeholder("session", s.label()), Text.placeholder("time", msg().formatTime(s.start())));
         }
     }
 
@@ -445,6 +481,14 @@ public final class PirateCommand implements TabExecutor {
                 }
             } else if (sub.equals("test") && sender.hasPermission(PERM_TEST)) {
                 options.addAll(List.of("5", "10", "15"));
+            } else if ((sub.equals("start") && sender.hasPermission(PERM_START))
+                    || ((sub.equals("skip") || sub.equals("unskip")) && sender.hasPermission(PERM_SKIP))) {
+                int n = todayCount();
+                if (n >= 2) {
+                    for (int i = 1; i <= n; i++) {
+                        options.add(String.valueOf(i));
+                    }
+                }
             }
         }
         String prefix = args[args.length - 1].toLowerCase(Locale.ROOT);

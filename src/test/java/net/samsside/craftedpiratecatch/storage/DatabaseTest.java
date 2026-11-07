@@ -167,7 +167,11 @@ class DatabaseTest {
     }
 
     private File[] backups() {
-        return dir.toFile().listFiles((d, n) -> n.startsWith("old.db.v1-backup-"));
+        return backups("old.db");
+    }
+
+    private File[] backups(String dbName) {
+        return dir.toFile().listFiles((d, n) -> n.startsWith(dbName + ".v1-backup-"));
     }
 
     @Test
@@ -196,6 +200,22 @@ class DatabaseTest {
             assertEquals(12, alice.points());
             assertTrue(v1.loadTrophies(1).get().contains(A + ":rare"));
             assertEquals(List.of(5L, 9L), v1.loadPending(B).get().stream().map(PendingReward::id).sorted().toList());
+
+            int keyWins = v1.submit(c -> {
+                try (java.sql.PreparedStatement ps = c.prepareStatement(
+                        "SELECT COUNT(*) FROM key_wins WHERE uuid=? AND event_id=1 AND won_ms=200")) {
+                    ps.setString(1, A.toString());
+                    try (ResultSet rs = ps.executeQuery()) {
+                        return rs.getInt(1);
+                    }
+                }
+            }).get();
+            assertEquals(1, keyWins, "the key win survived the migration");
+
+            // the unique index was swapped: a real session coexists with the -1 whole-day row
+            v1.insertEvent("2026-11-02", 0, "13:00", 0, 1, Database.RUNNING, "SCHEDULER").get();
+            v1.insertEvent("2026-11-04", 0, "13:00", 0, 1, Database.RUNNING, "SCHEDULER").get();
+            v1.insertEvent("2026-11-04", 1, "21:00", 0, 1, Database.RUNNING, "SCHEDULER").get();
         } finally {
             v1.shutdown();
         }
@@ -273,5 +293,31 @@ class DatabaseTest {
         db.insertEvent("2026-11-08", 1, "21:00", 0, 1, Database.SKIPPED, "SCHEDULER").get();
         assertFalse(db.deleteSkipped("2026-11-08", 0).get(), "session 0 was never skipped");
         assertTrue(db.deleteSkipped("2026-11-08", 1).get());
+    }
+
+    @Test
+    void backupIncludesUncheckpointedWal() throws Exception {
+        File f = v1File("wal.db");
+        try (Connection raw = DriverManager.getConnection("jdbc:sqlite:" + f.getAbsolutePath());
+             Statement st = raw.createStatement()) {
+            st.execute("PRAGMA journal_mode=WAL");
+            st.execute("PRAGMA wal_autocheckpoint=0");
+            st.execute("INSERT INTO events VALUES (3,'2026-11-04','21:00',500,600,'FINISHED','SCHEDULER',1)");
+
+            Database v1 = new Database(Logger.getLogger("test"));
+            try {
+                v1.open(f).get();
+                assertEquals(3, v1.loadEvents().get().size());
+            } finally {
+                v1.shutdown();
+            }
+        }
+        File[] backups = backups("wal.db");
+        assertNotNull(backups);
+        assertEquals(1, backups.length, () -> Arrays.toString(backups));
+        try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + backups[0].getAbsolutePath());
+             Statement st = c.createStatement(); ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM events")) {
+            assertEquals(3, rs.getInt(1), "the WAL-only row reached the backup");
+        }
     }
 }

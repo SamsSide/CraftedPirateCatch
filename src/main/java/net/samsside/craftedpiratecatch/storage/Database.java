@@ -37,7 +37,7 @@ public final class Database {
     public static final String SKIPPED = "SKIPPED";
     public static final String MISSED = "MISSED";
 
-    /** Statuses that close a rotation day for scheduling. */
+    /** Statuses that close a session (or, for a whole-day record, every session of its day) for scheduling. */
     public static final Set<String> CLOSED = Set.of(FINISHED, CANCELLED, SKIPPED, MISSED);
 
     /** The schema version this build writes, kept in {@code PRAGMA user_version}. */
@@ -234,7 +234,11 @@ public final class Database {
             }
             c.commit();
         } catch (SQLException e) {
-            c.rollback();
+            try {
+                c.rollback();
+            } catch (SQLException r) {
+                e.addSuppressed(r);
+            }
             throw e;
         } finally {
             c.setAutoCommit(auto);

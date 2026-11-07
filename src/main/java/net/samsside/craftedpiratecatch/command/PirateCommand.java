@@ -368,7 +368,7 @@ public final class PirateCommand implements TabExecutor {
             slot = HHMM.format(next.time());
         }
         String session = "-";
-        if (ev != null) {
+        if (ev != null && !ev.test) {
             session = ev.session < 0 ? "-" : (ev.session + 1) + "/"
                     + Math.max(ev.session + 1, rotation == null ? 0 : rotation.sessionsOn(ev.day));
         } else if (next != null) {

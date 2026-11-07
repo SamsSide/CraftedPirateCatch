@@ -17,6 +17,7 @@ import net.kyori.adventure.bossbar.BossBar;
 import net.samsside.craftedpiratecatch.loot.LootTable;
 import net.samsside.craftedpiratecatch.loot.LootTier;
 import net.samsside.craftedpiratecatch.schedule.Rotation;
+import net.samsside.craftedpiratecatch.schedule.SlotEntry;
 import org.bukkit.GameMode;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -83,15 +84,6 @@ public final class PluginConfig {
         }
         this.zone = z;
 
-        List<LocalTime> slots = new ArrayList<>();
-        for (String s : c.getStringList("schedule.slots")) {
-            try {
-                slots.add(LocalTime.parse(s.trim()));
-            } catch (DateTimeParseException e) {
-                log.warning("Unparsable schedule slot '" + s + "' dropped (expected HH:mm).");
-            }
-        }
-
         LocalTime rollover;
         String ro = c.getString("schedule.day-rollover", "06:00");
         try {
@@ -108,6 +100,20 @@ public final class PluginConfig {
             duration = clamped;
         }
         this.durationMinutes = duration;
+
+        List<List<LocalTime>> slots = new ArrayList<>();
+        for (String raw : c.getStringList("schedule.slots")) {
+            SlotEntry.Parsed p = SlotEntry.parse(raw, rollover, Duration.ofMinutes(duration));
+            if (p.times().isEmpty()) {
+                log.warning("Unparsable schedule slot '" + raw + "' dropped (expected HH:mm or HH:mm + HH:mm).");
+                continue;
+            }
+            if (p.problem() != null) {
+                log.severe("Schedule slot entry '" + raw + "' is invalid (" + p.problem() + ") - using only '"
+                        + p.times().get(0) + "'.");
+            }
+            slots.add(p.times());
+        }
 
         List<Integer> warnings = new ArrayList<>();
         for (Integer w : c.getIntegerList("schedule.warnings-minutes")) {

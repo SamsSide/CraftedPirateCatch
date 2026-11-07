@@ -13,7 +13,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.scheduler.BukkitTask;
 
 /**
- * Sync 20-tick loop: sends warnings, starts events at their window, records MISSED days,
+ * Sync 20-tick loop: sends warnings, starts events at their window, records MISSED sessions,
  * and ends running events (via {@link EventManager#tick}).
  */
 public final class SchedulerService {
@@ -21,7 +21,7 @@ public final class SchedulerService {
     private static final long LATE_WARNING_GRACE_MS = 60_000L;
 
     private final CraftedPirateCatch plugin;
-    /** rotation day + ":" + minutes, for warnings already sent (or deliberately skipped). */
+    /** rotation day + "#" + session + ":" + minutes, for warnings already sent (or deliberately skipped). */
     private final Set<String> warned = new HashSet<>();
     private BukkitTask task;
 
@@ -53,28 +53,31 @@ public final class SchedulerService {
             }
             Instant nowI = Instant.ofEpochMilli(now);
 
+            days:
             for (LocalDate d = rotation.firstDay(); !d.isAfter(rotation.lastDay()); d = d.plusDays(1)) {
-                Rotation.Slot slot = rotation.slot(d);
-                if (slot.start().isAfter(nowI)) {
-                    break; // later days start later still
-                }
-                if (events.hasRow(d)) {
-                    continue;
-                }
-                if (!nowI.isBefore(slot.end())) {
-                    events.markMissed(slot);
-                } else {
-                    ActiveEvent current = events.active();
-                    if (current == null || current.test) {
-                        events.startScheduled(slot); // late start keeps the original end time
+                for (Rotation.Slot slot : rotation.slots(d)) {
+                    if (slot.start().isAfter(nowI)) {
+                        break days; // sessions are in start order; later ones start later still
+                    }
+                    if (events.isRecorded(slot)) {
+                        continue;
+                    }
+                    if (!nowI.isBefore(slot.end())) {
+                        events.markMissed(slot);
+                    } else {
+                        ActiveEvent current = events.active();
+                        if (current == null || current.test) {
+                            events.startScheduled(slot); // late start keeps the original end time
+                        }
                     }
                 }
             }
 
-            Rotation.Slot next = rotation.nextScheduled(nowI, events::isClosed);
-            if (next != null && !events.hasRow(next.day()) && nowI.isBefore(next.start())) {
+            // Warn for the next session that has not started and has no record (never the running one).
+            Rotation.Slot next = rotation.nextStart(nowI, events::isRecorded);
+            if (next != null) {
                 for (int minutes : cfg.warningsMinutes) {
-                    String key = next.day() + ":" + minutes;
+                    String key = next.day() + "#" + next.session() + ":" + minutes;
                     if (warned.contains(key)) {
                         continue;
                     }

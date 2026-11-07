@@ -235,7 +235,7 @@ public final class PirateCommand implements TabExecutor {
             msg().send(sender, "info-disabled");
             return null;
         }
-        return rotation.slot(today);
+        return rotation.slot(today, 0);
     }
 
     private void adminStart(CommandSender sender) {
@@ -245,7 +245,7 @@ public final class PirateCommand implements TabExecutor {
         }
         EventManager events = plugin.events();
         ActiveEvent current = events.active();
-        if (events.hasRow(slot.day()) || (current != null && !current.test)) {
+        if (events.isRecorded(slot) || (current != null && !current.test)) {
             msg().send(sender, "admin-already-ran");
             return;
         }
@@ -259,7 +259,7 @@ public final class PirateCommand implements TabExecutor {
             return;
         }
         EventManager events = plugin.events();
-        String status = events.dayStatus(slot.day());
+        String status = events.status(slot);
         if (Database.SKIPPED.equals(status)) {
             msg().send(sender, "admin-skipped");
             return;
@@ -278,7 +278,7 @@ public final class PirateCommand implements TabExecutor {
             return;
         }
         EventManager events = plugin.events();
-        String status = events.dayStatus(slot.day());
+        String status = events.status(slot);
         if (status == null) {
             msg().send(sender, "admin-unskipped");
             return;
@@ -287,7 +287,8 @@ public final class PirateCommand implements TabExecutor {
             msg().send(sender, "admin-already-ran");
             return;
         }
-        events.unskip(slot.day(), removed -> msg().send(sender, removed ? "admin-unskipped" : "admin-already-ran"));
+        events.unskip(slot.day(), slot.session(),
+                removed -> msg().send(sender, removed ? "admin-unskipped" : "admin-already-ran"));
     }
 
     private void adminTest(CommandSender sender, String arg, String usage) {

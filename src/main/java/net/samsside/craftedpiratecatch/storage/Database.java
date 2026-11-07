@@ -292,13 +292,6 @@ public final class Database {
         return submit(c -> insertEvent(c, day, session, slot, startMs, endMs, status, startedBy));
     }
 
-    /** Session 0 of {@code day}. */
-    @Deprecated(forRemoval = true) // removed in Task 4
-    public CompletableFuture<Long> insertEvent(String day, String slot, long startMs, long endMs,
-                                               String status, String startedBy) {
-        return insertEvent(day, 0, slot, startMs, endMs, status, startedBy);
-    }
-
     static long insertEvent(Connection c, String day, int session, String slot, long startMs, long endMs,
                             String status, String startedBy) throws SQLException {
         try (PreparedStatement ps = c.prepareStatement(
@@ -322,13 +315,6 @@ public final class Database {
         throw new SQLException("No id returned for events insert");
     }
 
-    /** Session 0 of {@code day}. */
-    @Deprecated(forRemoval = true) // removed in Task 4
-    static long insertEvent(Connection c, String day, String slot, long startMs, long endMs,
-                            String status, String startedBy) throws SQLException {
-        return insertEvent(c, day, 0, slot, startMs, endMs, status, startedBy);
-    }
-
     /** Delete the SKIPPED row for {@code day}'s {@code session}. True if a row was removed. */
     public CompletableFuture<Boolean> deleteSkipped(String day, int session) {
         return submit(c -> {
@@ -339,12 +325,6 @@ public final class Database {
                 return ps.executeUpdate() > 0;
             }
         });
-    }
-
-    /** Session 0 of {@code day}. */
-    @Deprecated(forRemoval = true) // removed in Task 4
-    public CompletableFuture<Boolean> deleteSkipped(String day) {
-        return deleteSkipped(day, 0);
     }
 
     /** Mark a running event CANCELLED (finalized=1). False if it was already finalized. */

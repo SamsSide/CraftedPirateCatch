@@ -50,8 +50,10 @@ public final class EventManager {
 
     private volatile ActiveEvent active;
     private volatile Snapshot snapshot = Snapshot.EMPTY;
-    /** rotation_day -> status, mirroring the events table (kept in memory; DB is written async). */
-    private final Map<LocalDate, String> days = new ConcurrentHashMap<>();
+    /** (rotation_day, session) -> status, mirroring the events table (kept in memory; DB is written async). */
+    private final Map<SessionKey, String> sessions = new ConcurrentHashMap<>();
+    /** rotation_day -> status of a pre-upgrade whole-day (session -1) row, which closes every session of its day. */
+    private final Map<LocalDate, String> wholeDays = new ConcurrentHashMap<>();
 
     private BossBar bossBar;
     private final Set<UUID> bossViewers = new HashSet<>();
@@ -78,17 +80,41 @@ public final class EventManager {
         return snapshot;
     }
 
-    public String dayStatus(LocalDate d) {
-        return days.get(d);
+    /** The recorded status of {@code day}'s {@code session} (a whole-day row wins), or null if none. */
+    public String status(LocalDate day, int session) {
+        String whole = wholeDays.get(day);
+        return whole != null ? whole : sessions.get(new SessionKey(day, session));
     }
 
-    public boolean isClosed(LocalDate d) {
-        String s = days.get(d);
-        return s != null && Database.CLOSED.contains(s);
+    public String status(Rotation.Slot s) {
+        return status(s.day(), s.session());
     }
 
-    public boolean hasRow(LocalDate d) {
-        return days.containsKey(d);
+    /** True if the session has its own row or its day has a whole-day row. */
+    public boolean isRecorded(Rotation.Slot s) {
+        return status(s) != null;
+    }
+
+    public boolean isClosed(Rotation.Slot s) {
+        String status = status(s);
+        return status != null && Database.CLOSED.contains(status);
+    }
+
+    /** True if {@code d} has a pre-upgrade whole-day row. */
+    public boolean isWholeDay(LocalDate d) {
+        return wholeDays.containsKey(d);
+    }
+
+    private void remember(LocalDate day, int session, String status) {
+        if (session == Database.WHOLE_DAY) {
+            wholeDays.put(day, status);
+        } else {
+            sessions.put(new SessionKey(day, session), status);
+        }
+    }
+
+    private static String sessionText(int s) {
+        return s == Database.WHOLE_DAY ? "" : " session " + (s + 1);
     }
 
     /** Points of {@code uuid} in the running event (live map), 0 if none. */
@@ -106,7 +132,8 @@ public final class EventManager {
     /** Enable: load the events table (synchronous, allowed during enable) and resume/finalize. */
     public void recover() throws Exception {
         List<EventRow> rows = plugin.db().loadEvents().get(30, TimeUnit.SECONDS);
-        days.clear();
+        sessions.clear();
+        wholeDays.clear();
         List<EventRow> running = new ArrayList<>();
         for (EventRow r : rows) {
             LocalDate d = parseDay(r.rotationDay());
@@ -114,7 +141,7 @@ public final class EventManager {
                 log.warning("Ignoring events row " + r.id() + " with bad rotation_day '" + r.rotationDay() + "'");
                 continue;
             }
-            days.put(d, r.status());
+            remember(d, r.session(), r.status());
             if (Database.RUNNING.equals(r.status()) && !r.finalized()) {
                 running.add(r);
             }
@@ -123,7 +150,7 @@ public final class EventManager {
         long now = System.currentTimeMillis();
         for (EventRow r : running) {
             LocalDate d = parseDay(r.rotationDay());
-            ActiveEvent ev = new ActiveEvent(false, d, r.slot(), r.startMs(), r.endMs());
+            ActiveEvent ev = new ActiveEvent(false, d, r.session(), r.slot(), r.startMs(), r.endMs());
             ev.id.set(r.id());
             if (now < r.endMs() && active == null) {
                 for (ScoreRow s : plugin.db().loadScores(r.id()).get(30, TimeUnit.SECONDS)) {
@@ -131,10 +158,11 @@ public final class EventManager {
                 }
                 ev.trophies.addAll(plugin.db().loadTrophies(r.id()).get(30, TimeUnit.SECONDS));
                 beginRuntime(ev, false);
-                log.info("Resumed the running event for rotation day " + d + " (" + ev.scores.size()
+                log.info("Resumed the running event for rotation day " + d + sessionText(r.session()) + " (" + ev.scores.size()
                         + " score(s), ends in " + Durations.format(r.endMs() - now) + ").");
             } else {
-                log.info("Event for rotation day " + d + " ended while the server was down - finalizing now.");
+                log.info("Event for rotation day " + d + sessionText(r.session())
+                        + " ended while the server was down - finalizing now.");
                 finalizeLive(ev);
             }
         }
@@ -146,11 +174,12 @@ public final class EventManager {
             if (ex != null) {
                 log.log(Level.SEVERE, "Could not reload event records", ex);
             } else {
-                days.clear();
+                sessions.clear();
+                wholeDays.clear();
                 for (EventRow r : rows) {
                     LocalDate d = parseDay(r.rotationDay());
                     if (d != null) {
-                        days.put(d, r.status());
+                        remember(d, r.session(), r.status());
                     }
                 }
             }
@@ -197,7 +226,7 @@ public final class EventManager {
 
     // ================================================================== starting
 
-    /** Scheduler: start rotation day {@code slot.day()} now, keeping its original end time. */
+    /** Scheduler: start {@code slot}'s session now, keeping its original end time. */
     public void startScheduled(Rotation.Slot slot) {
         startLive(slot, slot.end().toEpochMilli(), "SCHEDULER");
     }
@@ -216,12 +245,12 @@ public final class EventManager {
         }
         long now = System.currentTimeMillis();
         String slotText = HHMM.format(slot.time());
-        ActiveEvent ev = new ActiveEvent(false, slot.day(), slotText, now, endMs);
-        days.put(slot.day(), Database.RUNNING);
+        ActiveEvent ev = new ActiveEvent(false, slot.day(), slot.session(), slotText, now, endMs);
+        remember(slot.day(), slot.session(), Database.RUNNING);
         beginRuntime(ev, true);
-        log.info("Pirate's Catch started for rotation day " + slot.day() + " (slot " + slotText + ", by "
+        log.info("Pirate's Catch started for rotation day " + slot.day() + " session " + slot.label() + " (slot " + slotText + ", by "
                 + startedBy + ", ends " + Instant.ofEpochMilli(endMs) + ").");
-        plugin.db().insertEvent(slot.day().toString(), slotText, now, endMs, Database.RUNNING, startedBy)
+        plugin.db().insertEvent(slot.day().toString(), slot.session(), slotText, now, endMs, Database.RUNNING, startedBy)
                 .whenComplete((id, ex) -> {
                     if (ex == null) {
                         ev.id.set(id); // runs on the DB thread, before any later DB task for this event
@@ -239,7 +268,7 @@ public final class EventManager {
     /** Staff: a TEST event of {@code minutes}; no rewards, no trophies, no DB, no Discord. */
     public void startTest(int minutes) {
         long now = System.currentTimeMillis();
-        ActiveEvent ev = new ActiveEvent(true, null, "-", now, now + minutes * 60_000L);
+        ActiveEvent ev = new ActiveEvent(true, null, -1, "-", now, now + minutes * 60_000L);
         beginRuntime(ev, true);
         log.info("TEST event started for " + minutes + " minute(s).");
     }
@@ -314,7 +343,7 @@ public final class EventManager {
             log.info("TEST event cancelled.");
             return true;
         }
-        days.put(ev.day, Database.CANCELLED);
+        remember(ev.day, ev.session, Database.CANCELLED);
         plugin.db().cancelEvent(ev::id, rows).whenComplete((ok, ex) -> plugin.sync(() -> {
             if (ex != null) {
                 log.log(Level.SEVERE, "Could not mark the event for " + ev.day + " CANCELLED", ex);
@@ -358,7 +387,7 @@ public final class EventManager {
                                 + " - it will be retried on the next restart.", ex);
                         return;
                     }
-                    days.put(ev.day, Database.FINISHED);
+                    remember(ev.day, ev.session, Database.FINISHED);
                     if (plan == null) {
                         log.info("Event for rotation day " + ev.day + " was already finalized.");
                         plugin.dispatcher().drainOnline();
@@ -414,33 +443,42 @@ public final class EventManager {
 
     // ================================================================== staff day controls
 
-    /** Mark {@code slot.day()} SKIPPED (caller has checked it has no row). */
+    /** Mark {@code slot}'s session SKIPPED (caller has checked it has no record). */
     public void skip(Rotation.Slot slot, String staffName) {
-        days.put(slot.day(), Database.SKIPPED);
-        plugin.db().insertEvent(slot.day().toString(), HHMM.format(slot.time()), slot.start().toEpochMilli(),
-                slot.end().toEpochMilli(), Database.SKIPPED, "STAFF:" + staffName).whenComplete((id, ex) -> {
+        remember(slot.day(), slot.session(), Database.SKIPPED);
+        plugin.db().insertEvent(slot.day().toString(), slot.session(), HHMM.format(slot.time()),
+                slot.start().toEpochMilli(), slot.end().toEpochMilli(), Database.SKIPPED, "STAFF:" + staffName)
+                .whenComplete((id, ex) -> {
                     if (ex != null) {
                         plugin.sync(() -> {
                             log.log(Level.SEVERE, "Could not record SKIPPED for " + slot.day(), ex);
                             reloadDays(null);
                         });
                     } else {
-                        log.info("Rotation day " + slot.day() + " SKIPPED by " + staffName + ".");
+                        log.info("Rotation day " + slot.day() + " session " + slot.label() + " SKIPPED by "
+                                + staffName + ".");
                     }
                 });
     }
 
-    /** Remove a SKIPPED row; {@code done} receives true if removed (on the main thread). */
-    public void unskip(LocalDate day, java.util.function.Consumer<Boolean> done) {
-        plugin.db().deleteSkipped(day.toString()).whenComplete((removed, ex) -> plugin.sync(() -> {
+    /**
+     * Remove the SKIPPED row of {@code day}'s {@code session} (never a whole-day row);
+     * {@code done} receives true if removed (on the main thread).
+     */
+    public void unskip(LocalDate day, int session, java.util.function.Consumer<Boolean> done) {
+        if (session < 0) {
+            done.accept(false); // a whole-day row is never unskipped
+            return;
+        }
+        plugin.db().deleteSkipped(day.toString(), session).whenComplete((removed, ex) -> plugin.sync(() -> {
             if (ex != null) {
-                log.log(Level.SEVERE, "Could not unskip " + day, ex);
+                log.log(Level.SEVERE, "Could not unskip " + day + " session " + (session + 1), ex);
                 done.accept(false);
                 return;
             }
             if (removed) {
-                days.remove(day);
-                log.info("Rotation day " + day + " is back on the schedule.");
+                sessions.remove(new SessionKey(day, session));
+                log.info("Rotation day " + day + " session " + (session + 1) + " is back on the schedule.");
             }
             done.accept(removed);
         }));
@@ -448,11 +486,12 @@ public final class EventManager {
 
     /** The whole window passed with no row (server offline): record MISSED, never make it up. */
     public void markMissed(Rotation.Slot slot) {
-        days.put(slot.day(), Database.MISSED);
-        log.warning("Rotation day " + slot.day() + " (" + HHMM.format(slot.time())
+        remember(slot.day(), slot.session(), Database.MISSED);
+        log.warning("Rotation day " + slot.day() + " session " + slot.label() + " (" + HHMM.format(slot.time())
                 + ") was MISSED - its whole window passed while the server was down.");
-        plugin.db().insertEvent(slot.day().toString(), HHMM.format(slot.time()), slot.start().toEpochMilli(),
-                slot.end().toEpochMilli(), Database.MISSED, "SCHEDULER").exceptionally(ex -> {
+        plugin.db().insertEvent(slot.day().toString(), slot.session(), HHMM.format(slot.time()),
+                slot.start().toEpochMilli(), slot.end().toEpochMilli(), Database.MISSED, "SCHEDULER")
+                .exceptionally(ex -> {
                     log.log(Level.SEVERE, "Could not record MISSED for " + slot.day(), ex);
                     return null;
                 });
